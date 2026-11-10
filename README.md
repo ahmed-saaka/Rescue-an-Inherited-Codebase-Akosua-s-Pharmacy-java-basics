@@ -1,41 +1,57 @@
 # Akosua's Pharmacy — Stock and Dispensing Tracker
 
-This is the starter repository for the **Java Basics** applied lab. Read the lab
-brief (*Java Basics Lab A — Akosua's Pharmacy*) alongside this repository; it
-explains the business, what you are being asked to deliver, and how your work is
-assessed.
+This Java 21 console application tracks pharmacy stock, customers, dispensing,
+restocking, and an end-of-day stock report.
 
-## What this is
+## Run
 
-A small in-house program that Akosua's pharmacy uses to track what is in stock
-and what gets dispensed. It works, but it has become risky to change. Your task
-is to diagnose it and rebuild it well — **not** to change what it does, but to
-make it safe to change and impossible to leave in an invalid state.
+With Maven:
 
-## Running it
-
-The program is plain Java (no external dependencies). You need JDK 21.
-
-**With Maven:**
-
-```bash
-mvn compile
-mvn exec:java -Dexec.mainClass=PharmacyTracker
+```shell
+mvn test
+mvn exec:java -Dexec.mainClass=com.amalitech.pharmacy.app.PharmacyTracker
 ```
 
-**Or directly with the JDK:**
+Or with a JDK 21:
 
-```bash
-javac -d target/classes src/main/java/PharmacyTracker.java
-java -cp target/classes PharmacyTracker
+```powershell
+$sources = Get-ChildItem -Recurse src\main\java -Filter *.java | ForEach-Object FullName
+javac -d target\classes $sources
+java -cp target\classes com.amalitech.pharmacy.app.PharmacyTracker
 ```
 
-Run it first, before you change anything, so you can see how it currently
-behaves. Look carefully at the end-of-day stock report.
+## Design decisions
 
-## What to hand in
+- **Stock belongs to `Medication`.** The stock field is private; synchronized
+  dispense/restock operations reject non-positive quantities, over-dispensing,
+  and integer overflow. Failed operations do not change inventory.
+- **Dispensing behavior is a policy.** `DispensingPolicy` separates a medicine's
+  requirements from pharmacy coordination. OTC and prescription policies are
+  independent implementations. `CustomerType` and `TransactionType` are enums
+  instead of unchecked strings.
+- **`Pharmacy` coordinates operations.** It checks membership and policy before
+  changing stock, then updates customer history and records a transaction only
+  on success. Collection accessors return immutable snapshots.
+- **A dispense request carries optional extra details.** A controlled-medicine
+  policy can validate the prescriber and additional fields without adding
+  category-specific branches to `Pharmacy`. The immutable transaction record
+  retains the prescriber and those details for audit. This also addresses a
+  gap in the starter, which printed the prescription but did not retain it in
+  the transaction.
+- **Prices remain `double` for behavior compatibility.** The starter used
+  floating-point arithmetic and printed results such as `25.0`; switching to
+  decimal currency arithmetic needs an explicit rounding/display decision and
+  is not mixed into this safety-focused rebuild.
 
-See the lab brief for the full list. In short: a written diagnosis, your rebuilt
-version (behaving exactly as the original does today), a short note on your key
-design decisions, and one improvement beyond the brief. You will talk through
-your work in a live review.
+The diagnosis and initial design sketch are in [DIAGNOSIS.md](DIAGNOSIS.md).
+The implementation uses a more concrete split into application, domain, and
+service packages than the initial sketch; the policy interface and immutable
+dispense request make the planned controlled category extensible while keeping
+the current behavior focused and testable.
+
+## Behavior and safety
+
+The normal sample transactions preserve the starter's prices, registered
+patient discount, stock changes, restock, and report. The attempted dispense of
+100 amoxicillin is rejected because only 39 remain; it leaves stock at 39 and
+does not create a transaction or customer-history entry.

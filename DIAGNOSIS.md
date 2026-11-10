@@ -1,217 +1,89 @@
-# Akosua's Pharmacy: System Diagnosis and Proposed Design
+# Akosua's Pharmacy: Diagnosis and Design Sketch
 
-## 1. Diagnosis of the Starter Program
+## Diagnosis of the starter
 
-The starter program combines the application's entry point, data models, dispensing operations, inventory management, transaction recording, and reporting in a single source file.
-
-Although this approach may work for a small demonstration, it creates significant maintenance and reliability challenges as the pharmacy system grows. Business rules are spread across mutable objects and conditional statements rather than being enforced consistently at the points where data changes.
-
-The following table identifies the main problems, their underlying causes, and their potential business impact.
+The starter combines its entry point, models, dispensing, stock updates,
+transaction recording, and reporting in one source file. More importantly,
+rules are not enforced at a single boundary before mutable state changes.
 
 | Priority | Root cause | Business risk |
 |---|---|---|
-| **Critical** | Dispensing reduces stock without first verifying that sufficient quantities are available. The sample attempts to dispense 100 units of amoxicillin when only 39 remain. | Inventory can become negative, making stock reports unreliable and potentially leading staff to make unsafe dispensing decisions. |
-| **High** | Inventory fields are publicly accessible, and restocking accepts unrestricted quantities. | Other parts of the application can modify stock directly or introduce invalid quantities, bypassing the intended business rules. |
-| **High** | Medicine categories and customer types are represented by unrestricted strings, while dispensing rules are handled through conditional statements inside `Pharmacy`. | Typographical errors and new medicine categories can cause incorrect behaviour. Introducing controlled medicines would require modifying existing conditional logic, increasing the risk of breaking established dispensing rules. |
-| **High** | The starter program has no automated tests. | Changes to stock management, pricing, or prescription validation cannot be checked consistently, increasing the likelihood of regressions. |
-| **Medium** | Dispensing validation does not adequately check positive quantities, prescription information, or whether the customer and medicine belong to the pharmacy. | Invalid dispensing requests may be accepted and incorrectly recorded as successful transactions. |
-| **Medium** | Transaction history, customer history, and pharmacy collections expose mutable internal data. | External code can modify or remove records without using authorised business operations, weakening data consistency and transaction traceability. |
-| **Medium** | Business logic, reporting, data models, and application entry points are tightly coupled. | Changes to one part of the application can affect unrelated functionality, making maintenance, testing, and future development more difficult. |
-| **Low** | Monetary values and transaction totals use `double`. | Floating-point precision can produce inaccurate currency calculations as the application handles more transactions. |
-### Most Critical Finding: Inventory Integrity
+| **Critical** | Dispensing subtracts a requested quantity without first checking stock. The sample asks for 100 amoxicillin when only 39 remain. | Inventory can go negative, so staff cannot trust availability reports when making dispensing decisions. For a pharmacy, unreliable inventory can affect patient safety. |
+| **High** | Stock and other model fields are public; restocking accepts unrestricted quantities. | Callers can bypass the intended rules or reduce stock with a negative restock, creating invalid inventory. |
+| **High** | Medicine category and customer type are unrestricted strings, and all dispensing rules sit in one conditional. | Typos can skip behavior, and adding controlled substances means changing the same logic used by OTC and prescription items, risking regressions. |
+| **High** | There are no automated tests in the starter. | Changes to stock, discount, or prescription behavior have no repeatable regression check. |
+| **Medium** | Dispense validation does not reject non-positive quantities, blank prescribers, or objects not registered with the pharmacy. | Invalid operations can be accepted or recorded as successful activity. |
+| **Medium** | Customer history, pharmacy collections, and the transaction list are mutable outside the pharmacy operations. | Records can be altered or removed without the business operation that should govern them. |
+| **Medium** | Models, rules, reporting, and the entry point are tightly coupled in one file. | A change to one behavior is harder to isolate, test, and review, increasing maintenance risk. |
+| **Low** | Monetary amounts use `double`. | Floating-point results may not represent currency exactly; changing this safely requires a currency rounding/display rule. |
 
-The negative-stock defect represents the most serious business risk.
+### Most dangerous issue
 
-Inventory figures are used to determine whether a medicine is available for dispensing. If the system allows stock to become negative or otherwise inaccurate, staff may rely on incorrect information when making dispensing decisions.
+Negative or inaccurate stock is the highest risk. Staff use the stock count to
+decide whether a medicine is available. If that count is wrong, decisions based
+on the report are unreliable. The stock invariant must be enforced before an
+operation succeeds, not merely reported after the count has become invalid.
 
-For a pharmacy, this is more than a reporting problem: it can affect the reliability of medicine availability information and create potential patient-safety concerns.
+## Initial design sketch
 
-The system should therefore enforce stock validation before every dispensing operation and prevent invalid inventory changes.
-
-## 2. Proposed System Design
-
-The proposed redesign separates the application into smaller components, each with a clearly defined responsibility.
-
-The objective is to improve encapsulation, enforce business rules consistently, support future expansion, and make the application easier to test and maintain.
-
-### Proposed Class Structure
-
-```mermaid
-
-classDiagram
-
-    class PharmacyService {
-
-        +addMedication(Medication)
-
-        +addCustomer(Customer)
-
-        +dispense(Customer, Medication, quantity, details)
-
-        +restock(Medication, quantity)
-
-        +getTransactions()
-
-    }
-
-    class Medication {
-
-        -stock
-
-        +getStock()
-
-        +dispenseStock(quantity)
-
-        +restock(quantity)
-
-    }
-
-    class DispensePolicy {
-
-        <<interface>>
-
-        +validate(DispenseRequest)
-
-    }
-
-    class OTCPolicy
-
-    class PrescriptionPolicy
-
-    class ControlledPolicy
-
-    class Customer
-
-    class Transaction
-
-    PharmacyService --> Medication
-
-    PharmacyService --> Customer
-
-    PharmacyService --> Transaction
-
-    PharmacyService --> DispensePolicy
-
-    DispensePolicy <|.. OTCPolicy
-
-    DispensePolicy <|.. PrescriptionPolicy
-
-    DispensePolicy <|.. ControlledPolicy
-
+```text
+                 +----------------------+
+                 | PharmacyTracker (CLI) |
+                 +----------+-----------+
+                            |
+                 +----------v-----------+
+                 | Pharmacy (operations)|
+                 +----+-------+------+--+
+                      |       |      |
+             +--------v--+ +--v-----+ +v----------------+
+             | Medication| |Customer| | Transaction log |
+             | private   | | history| | immutable       |
+             | stock     | +--------+ +-----------------+
+             +-----+-----+
+                   |
+            DispensingPolicy
+              /          \
+           OTC       Prescription
+                         ...
+                    Controlled
 ```
 
-### Responsibilities of the Main Components
+The policy boundary is the extension point: each medicine category implements
+its own validation. A controlled policy can validate a prescriber and any
+additional dispense-request details without adding a third category branch to
+the pharmacy's stock/recording workflow.
 
-**1. PharmacyService**
+## Design notes and changes from the initial sketch
 
-Acts as the central coordinator for pharmacy operations.
+The implementation uses application, domain, and service packages rather than
+the single `PharmacyService` component drawn in the initial sketch:
 
-Its responsibilities include:
+- `app` contains the console entry point.
+- `domain` contains `Medication`, `Customer`, immutable `Transaction` and
+  `DispenseRequest` records, enums, and dispensing policies.
+- `service.Pharmacy` coordinates registered customers/medicines, validates
+  requests, and records successful operations.
 
-- Registering medicines and customers.
+This makes the layer boundaries concrete while keeping the pharmacy operation
+as the single place that coordinates stock, history, and transaction changes.
+The policy receives a request with an optional details map. A future controlled
+policy can require fields such as a permit number, and the transaction retains
+both the prescriber and the supplied details.
 
-- Coordinating dispensing and restocking operations.
+An additional business-focused improvement is keeping the prescriber and
+additional dispense details in an immutable transaction record. The starter
+printed the prescriber for a prescription dispense but did not retain it in the
+transaction, weakening the pharmacy's audit trail.
 
-- Ensuring validation occurs before stock is changed.
+The starter's `double` currency representation is intentionally retained to
+preserve the existing sample totals and output. A later currency change should
+first set and test an explicit rounding rule.
 
-- Recording successful transactions.
+## Implementation chronology
 
-- Providing access to transaction history without exposing the internal collection for modification.
-
-**2. Medication**
-
-Owns and protects its inventory information.
-
-Its responsibilities include:
-
-- Keeping stock fields private.
-
-- Providing controlled methods for dispensing and restocking.
-
-- Rejecting zero or negative quantities.
-
-- Preventing stock from falling below zero.
-
-This ensures that inventory rules are enforced within the object responsible for managing stock.
-
-**3. DispensePolicy Interface**
-
-Defines a common contract for validating medicine dispensing requirements.
-
-Different implementations can enforce different rules without placing every condition inside one central dispensing method.
-
-The planned implementations are:
-
-- `OTCPolicy`: validates over-the-counter dispensing requirements.
-
-- `PrescriptionPolicy`: validates prescription-related requirements.
-
-- `ControlledPolicy`: enforces additional requirements for controlled medicines.
-
-This design uses interface-based polymorphism to make the system easier to extend.
-
-**4. Customer**
-
-Represents a pharmacy customer and protects customer-related information and dispensing history.
-
-**5. Transaction**
-
-Represents a completed pharmacy transaction, retaining relevant information about the customer, medicine, quantity, and dispensing details.
-
-Transaction records should not be created for unsuccessful dispensing attempts.
-
-## 3. Extensibility: Supporting Controlled Medicines
-
-One important requirement of the redesign is the ability to introduce controlled medicines without disrupting existing dispensing functionality.
-
-In the original design, dispensing behaviour is determined by conditional statements inside the `Pharmacy` class. Adding a new medicine category would require changing that central logic.
-
-The proposed design replaces this approach with separate policy implementations.
-
-For example, introducing controlled medicines would involve implementing `ControlledPolicy` through the `DispensePolicy` interface.
-
-This policy would enforce the additional requirements for controlled substances, such as:
-
-- Validating the prescriber's information.
-
-- Checking any additional required controlled-substance details.
-
-- Ensuring the required information is retained in the dispense record.
-
-The existing OTC and prescription policies would remain separate and would not need to be rewritten simply because a new category was introduced.
-
-This follows the Open/Closed Principle: the system should be open to extension while minimising modifications to existing, working components.
-
-## 4. Design and Implementation Progress
-
-The proposed architecture represents the planned direction of the redesign. It should not be interpreted as a claim that the complete system has already been implemented.
-
-Since the initial design work, a first inventory-safety improvement has been introduced in `PharmacyTracker.java`.
-
-The implemented changes include:
-
-- Making the stock field private.
-
-- Introducing guarded dispensing and restocking methods.
-
-- Rejecting invalid stock quantities.
-
-- Preventing dispensing operations that would result in negative inventory.
-
-- Updating the sample scenario so that an attempted overstock dispensing request is rejected.
-
-This is an important first step because it addresses the most critical defect identified in the original program.
-
-However, the improvement does not yet resolve all the architectural problems identified in the diagnosis. The broader redesign, including policy-based dispensing, improved transaction handling, stronger validation, and automated testing, remains part of the proposed implementation work.
-
-## 5. Conclusion
-
-The starter pharmacy application has several weaknesses relating to inventory integrity, encapsulation, validation, maintainability, and extensibility.
-
-The most urgent concern is the possibility of dispensing more medicine than is available, which can result in unreliable stock records and potentially unsafe business decisions.
-
-The proposed redesign addresses these weaknesses through encapsulation, interface-based polymorphism, separation of responsibilities, and stronger validation.
-
-The initial stock-safety improvement provides a foundation for the wider redesign. The remaining work will focus on introducing dispensing policies, protecting transaction records, improving validation, and adding automated tests.
-
-The overall goal is to develop a pharmacy management system that is reliable, maintainable, testable, and capable of supporting new medicine categories without unnecessarily disrupting existing functionality.
+The diagnosis was committed with the original source in the initial repository
+commit. A stock-safety edit was made afterward, before this broader rebuild.
+The diagnosis commit therefore records the starting point for the rebuild, but
+does not predate that earlier stock edit. The current implementation rejects
+over-dispensing and invalid stock updates; a failed dispense does not change
+stock, customer history, or transactions.
