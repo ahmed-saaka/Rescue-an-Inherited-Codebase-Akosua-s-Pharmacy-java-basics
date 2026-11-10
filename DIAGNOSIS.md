@@ -15,7 +15,7 @@ rules are not enforced at a single boundary before mutable state changes.
 | **Medium** | Dispense validation does not reject non-positive quantities, blank prescribers, or objects not registered with the pharmacy. | Invalid operations can be accepted or recorded as successful activity. |
 | **Medium** | Customer history, pharmacy collections, and the transaction list are mutable outside the pharmacy operations. | Records can be altered or removed without the business operation that should govern them. |
 | **Medium** | Models, rules, reporting, and the entry point are tightly coupled in one file. | A change to one behavior is harder to isolate, test, and review, increasing maintenance risk. |
-| **Low** | Monetary amounts use `double`. | Floating-point results may not represent currency exactly; changing this safely requires a currency rounding/display rule. |
+| **Low** | Monetary amounts use `double`. | Binary floating-point results may not represent currency exactly and can make totals confusing. |
 
 ### Most dangerous issue
 
@@ -32,7 +32,7 @@ operation succeeds, not merely reported after the count has become invalid.
                  +----------+-----------+
                             |
                  +----------v-----------+
-                 | Pharmacy (operations)|
+                 | Pharmacy (domain root)|
                  +----+-------+------+--+
                       |       |      |
              +--------v--+ +--v-----+ +v----------------+
@@ -55,35 +55,36 @@ the pharmacy's stock/recording workflow.
 
 ## Design notes and changes from the initial sketch
 
-The implementation uses application, domain, and service packages rather than
-the single `PharmacyService` component drawn in the initial sketch:
+The implementation uses application and domain packages rather than the
+single `PharmacyService` component drawn in the initial sketch:
 
 - `app` contains the console entry point.
 - `domain` contains `Medication`, `Customer`, immutable `Transaction` and
-  `DispenseRequest` records, enums, and dispensing policies.
-- `service.Pharmacy` coordinates registered customers/medicines, validates
-  requests, and records successful operations.
+  `DispenseRequest` records, enums, dispensing policies, and `Pharmacy`.
+- `Pharmacy` is the aggregate root that coordinates registered
+  customers/medicines, validates requests, and records successful operations.
 
-This makes the layer boundaries concrete while keeping the pharmacy operation
-as the single place that coordinates stock, history, and transaction changes.
-The policy receives a request with an optional details map. A future controlled
-policy can require fields such as a permit number, and the transaction retains
-both the prescriber and the supplied details.
+Keeping the pharmacy operation in the domain package allows stock and history
+mutation to remain package-private. External callers cannot change inventory or
+customer history without going through the operation that records the matching
+transaction. The policy receives a request with an optional details map. A
+future controlled policy can require fields such as a permit number, and the
+transaction retains both the prescriber and the supplied details.
 
 An additional business-focused improvement is keeping the prescriber and
 additional dispense details in an immutable transaction record. The starter
 printed the prescriber for a prescription dispense but did not retain it in the
 transaction, weakening the pharmacy's audit trail.
 
-The starter's `double` currency representation is intentionally retained to
-preserve the existing sample totals and output. A later currency change should
-first set and test an explicit rounding rule.
+Prices and totals use `BigDecimal` to avoid binary floating-point artifacts.
+No new rounding rule is applied because the starter did not define one; output
+formatting retains the familiar sample amounts.
 
 ## Implementation chronology
 
-The diagnosis was committed with the original source in the initial repository
-commit. A stock-safety edit was made afterward, before this broader rebuild.
-The diagnosis commit therefore records the starting point for the rebuild, but
-does not predate that earlier stock edit. The current implementation rejects
+The initial repository commit (`e2907cb`) contains both `DIAGNOSIS.md` and the
+starter source already modified with a stock-safety guard. The diagnosis
+therefore did not precede the first code change, and the commit cannot be
+presented as proof of that ordering. The broader rebuild rejects
 over-dispensing and invalid stock updates; a failed dispense does not change
 stock, customer history, or transactions.

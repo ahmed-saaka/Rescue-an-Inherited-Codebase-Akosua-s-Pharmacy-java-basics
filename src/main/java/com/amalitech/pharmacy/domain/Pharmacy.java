@@ -1,12 +1,6 @@
-package com.amalitech.pharmacy.service;
+package com.amalitech.pharmacy.domain;
 
-import com.amalitech.pharmacy.domain.Customer;
-import com.amalitech.pharmacy.domain.CustomerType;
-import com.amalitech.pharmacy.domain.DispenseRequest;
-import com.amalitech.pharmacy.domain.Medication;
-import com.amalitech.pharmacy.domain.Transaction;
-import com.amalitech.pharmacy.domain.TransactionType;
-
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +9,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class Pharmacy {
+    private static final BigDecimal REGISTERED_PATIENT_DISCOUNT = new BigDecimal("0.95");
     private static final AtomicInteger NEXT_TRANSACTION_ID = new AtomicInteger(1);
 
     private final String name;
@@ -63,46 +58,42 @@ public final class Pharmacy {
             return new OperationResult(false, "Cannot dispense medication not stocked by this pharmacy");
         }
         Objects.requireNonNull(request, "Dispense request is required");
-        int quantity = request.quantity();
-        if (quantity <= 0) {
+        if (request.quantity() <= 0) {
             return new OperationResult(false, "Cannot dispense a non-positive quantity");
         }
 
         Optional<String> policyError = medication.dispensingPolicy().validationError(request);
         if (policyError.isPresent()) {
-            return new OperationResult(false, "Cannot dispense " + medication.name()
-                    + " " + policyError.get());
+            return new OperationResult(false,
+                    "Cannot dispense " + medication.name() + " " + policyError.get());
         }
 
-        double total = medication.price() * quantity;
+        BigDecimal total = medication.price().multiply(BigDecimal.valueOf(request.quantity()));
         if (customer.type() == CustomerType.REGISTERED) {
-            total *= 0.95;
+            total = total.multiply(REGISTERED_PATIENT_DISCOUNT);
         }
-        if (!Double.isFinite(total)) {
-            return new OperationResult(false, "Cannot calculate a valid total for " + medication.name());
-        }
-        if (!medication.dispenseStock(quantity)) {
+        if (!medication.dispenseStock(request.quantity())) {
             return new OperationResult(false,
                     "Cannot dispense " + medication.name() + ": insufficient stock");
         }
 
-        customer.recordDispense("Got " + quantity + " x " + medication.name());
+        customer.recordDispense("Got " + request.quantity() + " x " + medication.name());
         transactions.add(new Transaction(
                 NEXT_TRANSACTION_ID.getAndIncrement(),
                 customer.name(),
                 medication.name(),
-                quantity,
+                request.quantity(),
                 total,
                 TransactionType.DISPENSE,
                 request.prescriber(),
                 request.additionalDetails()));
 
-        String message = "Dispensed " + quantity + " x " + medication.name() + " to " + customer.name();
-        String prescriber = request.prescriber();
-        if (prescriber != null && !prescriber.isBlank()) {
-            message += " (prescribed by " + prescriber + ")";
+        String message = "Dispensed " + request.quantity() + " x " + medication.name()
+                + " to " + customer.name();
+        if (medication.dispensingPolicy().prescriberRequired()) {
+            message += " (prescribed by " + request.prescriber() + ")";
         }
-        message += " for GHS " + total;
+        message += " for GHS " + formatAmount(total);
         return new OperationResult(true, message);
     }
 
@@ -119,7 +110,7 @@ public final class Pharmacy {
                 "(supplier)",
                 medication.name(),
                 quantity,
-                0,
+                BigDecimal.ZERO,
                 TransactionType.RESTOCK,
                 null,
                 Map.of()));
@@ -130,14 +121,21 @@ public final class Pharmacy {
         return List.copyOf(transactions);
     }
 
-    public synchronized void printReport() {
-        System.out.println();
-        System.out.println("=== " + name + " - end of day ===");
-        System.out.println("Stock levels:");
+    public synchronized String endOfDayReport() {
+        StringBuilder report = new StringBuilder()
+                .append('\n')
+                .append("=== ").append(name).append(" - end of day ===\n")
+                .append("Stock levels:\n");
         for (Medication medication : medications) {
-            System.out.println("  " + medication.name() + " (" + medication.category()
-                    + "): " + medication.stock() + " in stock");
+            report.append("  ").append(medication.name())
+                    .append(" (").append(medication.category()).append("): ")
+                    .append(medication.stock()).append(" in stock\n");
         }
-        System.out.println("Transactions today: " + transactions.size());
+        return report.append("Transactions today: ").append(transactions.size()).toString();
+    }
+
+    private static String formatAmount(BigDecimal amount) {
+        String formatted = amount.stripTrailingZeros().toPlainString();
+        return formatted.contains(".") ? formatted : formatted + ".0";
     }
 }

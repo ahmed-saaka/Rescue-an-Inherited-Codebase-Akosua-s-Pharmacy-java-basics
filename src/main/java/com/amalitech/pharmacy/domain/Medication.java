@@ -1,5 +1,6 @@
 package com.amalitech.pharmacy.domain;
 
+import java.math.BigDecimal;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -8,22 +9,22 @@ public final class Medication {
 
     private final int id;
     private final String name;
-    private final double price;
+    private final BigDecimal price;
     private final DispensingPolicy dispensingPolicy;
     private int stock;
 
-    public Medication(String name, double price, int initialStock, DispensingPolicy dispensingPolicy) {
-        this.id = NEXT_ID.getAndIncrement();
+    public Medication(String name, BigDecimal price, int initialStock, DispensingPolicy dispensingPolicy) {
         this.name = requireText(name, "Medication name");
-        if (!Double.isFinite(price) || price < 0) {
-            throw new IllegalArgumentException("Price must be a finite, non-negative amount");
+        this.price = Objects.requireNonNull(price, "Price is required");
+        if (price.signum() < 0) {
+            throw new IllegalArgumentException("Price must be a non-negative amount");
         }
         if (initialStock < 0) {
             throw new IllegalArgumentException("Initial stock cannot be negative");
         }
-        this.price = price;
-        this.stock = initialStock;
         this.dispensingPolicy = Objects.requireNonNull(dispensingPolicy, "Dispensing policy is required");
+        this.id = NEXT_ID.getAndIncrement();
+        this.stock = initialStock;
     }
 
     public int id() {
@@ -34,7 +35,7 @@ public final class Medication {
         return name;
     }
 
-    public double price() {
+    public BigDecimal price() {
         return price;
     }
 
@@ -50,7 +51,7 @@ public final class Medication {
         return stock;
     }
 
-    public synchronized boolean dispenseStock(int quantity) {
+    synchronized boolean dispenseStock(int quantity) {
         if (quantity <= 0 || quantity > stock) {
             return false;
         }
@@ -58,7 +59,7 @@ public final class Medication {
         return true;
     }
 
-    public synchronized boolean restock(int quantity) {
+    synchronized boolean restock(int quantity) {
         if (quantity <= 0 || quantity > Integer.MAX_VALUE - stock) {
             return false;
         }

@@ -1,15 +1,8 @@
-package com.amalitech.pharmacy.service;
+package com.amalitech.pharmacy.domain;
 
-import com.amalitech.pharmacy.domain.Customer;
-import com.amalitech.pharmacy.domain.CustomerType;
-import com.amalitech.pharmacy.domain.DispenseRequest;
-import com.amalitech.pharmacy.domain.DispensingPolicy;
-import com.amalitech.pharmacy.domain.Medication;
-import com.amalitech.pharmacy.domain.OverTheCounterPolicy;
-import com.amalitech.pharmacy.domain.PrescriptionPolicy;
-import com.amalitech.pharmacy.domain.TransactionType;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -24,8 +17,10 @@ class PharmacyTest {
     @Test
     void preservesSuccessfulDispensingDiscountAndRestockBehavior() {
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
-        Medication otc = new Medication("Paracetamol 500mg", 12.50, 100, new OverTheCounterPolicy());
-        Medication prescription = new Medication("Amoxicillin 250mg", 30.00, 40, new PrescriptionPolicy());
+        Medication otc = new Medication(
+                "Paracetamol 500mg", new BigDecimal("12.50"), 100, new OverTheCounterPolicy());
+        Medication prescription = new Medication(
+                "Amoxicillin 250mg", new BigDecimal("30.00"), 40, new PrescriptionPolicy());
         Customer walkIn = new Customer("Kofi Mensah", CustomerType.WALK_IN);
         Customer registered = new Customer("Ama Owusu", CustomerType.REGISTERED);
         pharmacy.addMedication(otc);
@@ -40,8 +35,8 @@ class PharmacyTest {
         assertEquals(148, otc.stock());
         assertEquals(39, prescription.stock());
         assertEquals(3, pharmacy.transactions().size());
-        assertEquals(25.0, pharmacy.transactions().get(0).total());
-        assertEquals(28.5, pharmacy.transactions().get(1).total());
+        assertEquals(new BigDecimal("25.00"), pharmacy.transactions().get(0).total());
+        assertEquals(new BigDecimal("28.5000"), pharmacy.transactions().get(1).total());
         assertEquals(TransactionType.RESTOCK, pharmacy.transactions().get(2).type());
         assertEquals(List.of("Got 2 x Paracetamol 500mg"), walkIn.history());
     }
@@ -49,7 +44,8 @@ class PharmacyTest {
     @Test
     void rejectsOverDispensingWithoutChangingStockOrRecordingSuccess() {
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
-        Medication medication = new Medication("Amoxicillin 250mg", 30.00, 39, new PrescriptionPolicy());
+        Medication medication = new Medication(
+                "Amoxicillin 250mg", new BigDecimal("30.00"), 39, new PrescriptionPolicy());
         Customer customer = new Customer("Kofi Mensah", CustomerType.WALK_IN);
         pharmacy.addMedication(medication);
         pharmacy.addCustomer(customer);
@@ -66,7 +62,8 @@ class PharmacyTest {
     @Test
     void rejectsInvalidQuantitiesAndStockOverflow() {
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
-        Medication medication = new Medication("Paracetamol 500mg", 12.50, 4, new OverTheCounterPolicy());
+        Medication medication = new Medication(
+                "Paracetamol 500mg", new BigDecimal("12.50"), 4, new OverTheCounterPolicy());
         Customer customer = new Customer("Kofi Mensah", CustomerType.WALK_IN);
         pharmacy.addMedication(medication);
         pharmacy.addCustomer(customer);
@@ -75,9 +72,10 @@ class PharmacyTest {
         assertFalse(pharmacy.dispense(customer, medication, -1, null).successful());
         assertFalse(pharmacy.restock(medication, 0).successful());
         assertFalse(pharmacy.restock(medication, -2).successful());
-        assertFalse(medication.restock(Integer.MAX_VALUE));
+        assertFalse(pharmacy.restock(medication, Integer.MAX_VALUE).successful());
         assertThrows(IllegalArgumentException.class,
-                () -> new Medication("Invalid stock", 1.00, -1, new OverTheCounterPolicy()));
+                () -> new Medication("Invalid stock", new BigDecimal("1.00"), -1,
+                        new OverTheCounterPolicy()));
         assertEquals(4, medication.stock());
         assertTrue(pharmacy.transactions().isEmpty());
     }
@@ -85,7 +83,8 @@ class PharmacyTest {
     @Test
     void rejectsPrescriptionDispensingWithoutPrescriber() {
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
-        Medication medication = new Medication("Amoxicillin 250mg", 30.00, 10, new PrescriptionPolicy());
+        Medication medication = new Medication(
+                "Amoxicillin 250mg", new BigDecimal("30.00"), 10, new PrescriptionPolicy());
         Customer customer = new Customer("Kofi Mensah", CustomerType.WALK_IN);
         pharmacy.addMedication(medication);
         pharmacy.addCustomer(customer);
@@ -98,20 +97,19 @@ class PharmacyTest {
     }
 
     @Test
-    void rejectsUnrepresentableTotalsBeforeChangingStock() {
+    void preservesExactLargeTotalsWithoutOverflow() {
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
         Medication medication = new Medication(
-                "High value medicine", Double.MAX_VALUE, 2, new OverTheCounterPolicy());
+                "High value medicine", new BigDecimal("1E+1000"), 2, new OverTheCounterPolicy());
         Customer customer = new Customer("Kofi Mensah", CustomerType.WALK_IN);
         pharmacy.addMedication(medication);
         pharmacy.addCustomer(customer);
 
         OperationResult result = pharmacy.dispense(customer, medication, 2, null);
 
-        assertFalse(result.successful());
-        assertEquals(2, medication.stock());
-        assertTrue(customer.history().isEmpty());
-        assertTrue(pharmacy.transactions().isEmpty());
+        assertTrue(result.successful());
+        assertEquals(0, medication.stock());
+        assertEquals(new BigDecimal("2E+1000"), pharmacy.transactions().get(0).total());
     }
 
     @Test
@@ -120,6 +118,11 @@ class PharmacyTest {
             @Override
             public String category() {
                 return "CONTROLLED";
+            }
+
+            @Override
+            public boolean prescriberRequired() {
+                return true;
             }
 
             @Override
@@ -134,7 +137,7 @@ class PharmacyTest {
             }
         };
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
-        Medication medication = new Medication("Controlled medicine", 5.00, 3, controlledPolicy);
+        Medication medication = new Medication("Controlled medicine", new BigDecimal("5.00"), 3, controlledPolicy);
         Customer customer = new Customer("Ama Owusu", CustomerType.REGISTERED);
         pharmacy.addMedication(medication);
         pharmacy.addCustomer(customer);
@@ -154,12 +157,28 @@ class PharmacyTest {
     @Test
     void collectionAccessorsDoNotExposeMutableInternalState() {
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
-        Medication medication = new Medication("Paracetamol 500mg", 12.50, 2, new OverTheCounterPolicy());
+        Medication medication = new Medication(
+                "Paracetamol 500mg", new BigDecimal("12.50"), 2, new OverTheCounterPolicy());
         pharmacy.addMedication(medication);
 
         assertThrows(UnsupportedOperationException.class,
                 () -> pharmacy.medications().clear());
         assertThrows(UnsupportedOperationException.class,
                 () -> pharmacy.transactions().clear());
+    }
+
+    @Test
+    void ignoresOptionalPrescriberInOverTheCounterConfirmation() {
+        Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
+        Medication medication = new Medication(
+                "Paracetamol 500mg", new BigDecimal("12.50"), 2, new OverTheCounterPolicy());
+        Customer customer = new Customer("Kofi Mensah", CustomerType.WALK_IN);
+        pharmacy.addMedication(medication);
+        pharmacy.addCustomer(customer);
+
+        OperationResult result = pharmacy.dispense(customer, medication, 1, "Dr. Optional");
+
+        assertEquals("Dispensed 1 x Paracetamol 500mg to Kofi Mensah for GHS 12.5",
+                result.message());
     }
 }

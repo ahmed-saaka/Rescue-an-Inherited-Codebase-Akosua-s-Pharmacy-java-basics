@@ -1,14 +1,15 @@
 package com.amalitech.pharmacy.domain;
 
-import java.util.Objects;
 import java.util.Map;
+import java.math.BigDecimal;
+import java.util.Objects;
 
 public record Transaction(
         int id,
         String customerName,
         String medicationName,
         int quantity,
-        double total,
+        BigDecimal total,
         TransactionType type,
         String prescriber,
         Map<String, String> dispensingDetails) {
@@ -22,8 +23,9 @@ public record Transaction(
         if (quantity <= 0) {
             throw new IllegalArgumentException("Transaction quantity must be positive");
         }
-        if (!Double.isFinite(total) || total < 0) {
-            throw new IllegalArgumentException("Transaction total must be finite and non-negative");
+        Objects.requireNonNull(total, "Transaction total is required");
+        if (total.signum() < 0) {
+            throw new IllegalArgumentException("Transaction total must be non-negative");
         }
         Objects.requireNonNull(type, "Transaction type is required");
         Objects.requireNonNull(dispensingDetails, "Dispensing details are required");

@@ -1,4 +1,4 @@
-package com.amalitech.pharmacy.service;
+package com.amalitech.pharmacy.domain;
 
 import java.util.Objects;
 

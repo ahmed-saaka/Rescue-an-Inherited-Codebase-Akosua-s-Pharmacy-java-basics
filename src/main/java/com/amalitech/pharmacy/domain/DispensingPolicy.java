@@ -6,4 +6,8 @@ public interface DispensingPolicy {
     String category();
 
     Optional<String> validationError(DispenseRequest request);
+
+    default boolean prescriberRequired() {
+        return false;
+    }
 }

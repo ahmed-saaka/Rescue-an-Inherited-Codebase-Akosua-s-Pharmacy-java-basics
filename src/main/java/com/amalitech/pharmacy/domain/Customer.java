@@ -19,9 +19,9 @@ public final class Customer {
     }
 
     public Customer(String name, CustomerType type, String phone) {
-        this.id = NEXT_ID.getAndIncrement();
         this.name = requireText(name, "Customer name");
         this.type = Objects.requireNonNull(type, "Customer type is required");
+        this.id = NEXT_ID.getAndIncrement();
         this.phone = phone;
     }
 
@@ -45,7 +45,7 @@ public final class Customer {
         return List.copyOf(history);
     }
 
-    public synchronized void recordDispense(String entry) {
+    synchronized void recordDispense(String entry) {
         history.add(requireText(entry, "History entry"));
     }
 
