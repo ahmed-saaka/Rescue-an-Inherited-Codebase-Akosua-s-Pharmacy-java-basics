@@ -26,27 +26,7 @@ operation succeeds, not merely reported after the count has become invalid.
 
 ## Initial design sketch
 
-```text
-                 +----------------------+
-                 | PharmacyTracker (CLI) |
-                 +----------+-----------+
-                            |
-                 +----------v-----------+
-                 | Pharmacy (domain root)|
-                 +----+-------+------+--+
-                      |       |      |
-             +--------v--+ +--v-----+ +v----------------+
-             | Medication| |Customer| | Transaction log |
-             | private   | | history| | immutable       |
-             | stock     | +--------+ +-----------------+
-             +-----+-----+
-                   |
-            DispensingPolicy
-              /          \
-           OTC       Prescription
-                         ...
-                    Controlled
-```
+![Akosua's Pharmacy design sketch](design-sketch.png)
 
 The policy boundary is the extension point: each medicine category implements
 its own validation. A controlled policy can validate a prescriber and any

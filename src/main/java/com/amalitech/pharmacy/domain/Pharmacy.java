@@ -1,3 +1,4 @@
+// Pharmacy aggregate: validates operations and coordinates stock, customer history, and transaction records.
 package com.amalitech.pharmacy.domain;
 
 import java.math.BigDecimal;
@@ -8,6 +9,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
+// The starter spread mutable operations across one file; this aggregate coordinates each business change.
 public final class Pharmacy {
     private static final BigDecimal REGISTERED_PATIENT_DISCOUNT = new BigDecimal("0.95");
     private static final AtomicInteger NEXT_TRANSACTION_ID = new AtomicInteger(1);
@@ -29,10 +31,12 @@ public final class Pharmacy {
     }
 
     public synchronized void addMedication(Medication medication) {
+        // Keep the registered inventory list private and reject null entries.
         medications.add(Objects.requireNonNull(medication, "Medication is required"));
     }
 
     public synchronized void addCustomer(Customer customer) {
+        // Membership checks below only accept customers registered with this pharmacy.
         customers.add(Objects.requireNonNull(customer, "Customer is required"));
     }
 
@@ -51,6 +55,7 @@ public final class Pharmacy {
 
     public synchronized OperationResult dispense(
             Customer customer, Medication medication, DispenseRequest request) {
+        // Refuse unknown objects so an operation cannot be attributed to another pharmacy.
         if (customer == null || !customers.contains(customer)) {
             return new OperationResult(false, "Cannot dispense to an unregistered pharmacy customer");
         }
@@ -62,12 +67,15 @@ public final class Pharmacy {
             return new OperationResult(false, "Cannot dispense a non-positive quantity");
         }
 
+        // The starter used string branches here; policies keep new medicine rules out of the shared workflow.
         Optional<String> policyError = medication.dispensingPolicy().validationError(request);
         if (policyError.isPresent()) {
             return new OperationResult(false,
                     "Cannot dispense " + medication.name() + " " + policyError.get());
         }
 
+        // The starter deducted stock before checking availability; reject before changing any recorded state.
+        // Calculate the charge first, applying the existing discount only to registered patients.
         BigDecimal total = medication.price().multiply(BigDecimal.valueOf(request.quantity()));
         if (customer.type() == CustomerType.REGISTERED) {
             total = total.multiply(REGISTERED_PATIENT_DISCOUNT);
@@ -77,6 +85,7 @@ public final class Pharmacy {
                     "Cannot dispense " + medication.name() + ": insufficient stock");
         }
 
+        // History and audit records are written only after stock successfully changes.
         customer.recordDispense("Got " + request.quantity() + " x " + medication.name());
         transactions.add(new Transaction(
                 NEXT_TRANSACTION_ID.getAndIncrement(),
@@ -98,6 +107,7 @@ public final class Pharmacy {
     }
 
     public synchronized OperationResult restock(Medication medication, int quantity) {
+        // Only this pharmacy's medication can be restocked through this operation.
         if (medication == null || !medications.contains(medication)) {
             return new OperationResult(false, "Cannot restock medication not stocked by this pharmacy");
         }
@@ -105,6 +115,7 @@ public final class Pharmacy {
             return new OperationResult(false,
                     "Cannot restock " + medication.name() + " with quantity " + quantity);
         }
+        // Record the restock only after the stock update has succeeded.
         transactions.add(new Transaction(
                 NEXT_TRANSACTION_ID.getAndIncrement(),
                 "(supplier)",
@@ -118,10 +129,12 @@ public final class Pharmacy {
     }
 
     public synchronized List<Transaction> transactions() {
+        // The starter returned its mutable internal list; callers now receive a read-only snapshot.
         return List.copyOf(transactions);
     }
 
     public synchronized String endOfDayReport() {
+        // Build report text as data; the command-line layer decides where to print it.
         StringBuilder report = new StringBuilder()
                 .append('\n')
                 .append("=== ").append(name).append(" - end of day ===\n")

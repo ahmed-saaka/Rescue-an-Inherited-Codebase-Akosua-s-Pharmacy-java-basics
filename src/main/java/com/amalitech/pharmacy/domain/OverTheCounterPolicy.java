@@ -1,3 +1,4 @@
+// OTC dispensing policy: accepts requests without prescription-specific validation.
 package com.amalitech.pharmacy.domain;
 
 import java.util.Optional;
@@ -10,6 +11,7 @@ public final class OverTheCounterPolicy implements DispensingPolicy {
 
     @Override
     public Optional<String> validationError(DispenseRequest request) {
+        // OTC medicine has no prescription-specific requirement.
         return Optional.empty();
     }
 }

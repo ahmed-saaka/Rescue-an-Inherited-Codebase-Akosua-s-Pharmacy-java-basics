@@ -1,3 +1,4 @@
+// Customer model: stores identity, customer type, contact information, and read-only dispense history.
 package com.amalitech.pharmacy.domain;
 
 import java.util.ArrayList;
@@ -7,7 +8,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public final class Customer {
     private static final AtomicInteger NEXT_ID = new AtomicInteger(1);
-
     private final int id;
     private final String name;
     private final CustomerType type;

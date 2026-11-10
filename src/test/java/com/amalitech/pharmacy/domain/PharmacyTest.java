@@ -1,3 +1,4 @@
+// Regression tests for pharmacy behavior, stock integrity, audit records, and policy extensibility.
 package com.amalitech.pharmacy.domain;
 
 import org.junit.jupiter.api.Test;

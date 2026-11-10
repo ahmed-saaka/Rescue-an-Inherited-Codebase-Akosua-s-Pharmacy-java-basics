@@ -1,3 +1,4 @@
+// Result value returned by a pharmacy operation to report success or a user-readable rejection.
 package com.amalitech.pharmacy.domain;
 
 import java.util.Objects;

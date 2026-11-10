@@ -1,9 +1,11 @@
+// Immutable transaction record: preserves dispense/restock details for reporting and audit.
 package com.amalitech.pharmacy.domain;
 
 import java.util.Map;
 import java.math.BigDecimal;
 import java.util.Objects;
 
+// Immutable audit entry; retain prescription details that the starter only printed.
 public record Transaction(
         int id,
         String customerName,

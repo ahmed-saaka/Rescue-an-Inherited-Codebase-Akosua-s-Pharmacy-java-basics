@@ -1,3 +1,4 @@
+// Medication model: owns price, category policy, and protected stock-changing operations.
 package com.amalitech.pharmacy.domain;
 
 import java.math.BigDecimal;
@@ -19,6 +20,7 @@ public final class Medication {
         if (price.signum() < 0) {
             throw new IllegalArgumentException("Price must be a non-negative amount");
         }
+        // Reject invalid starting inventory as well as invalid later stock changes.
         if (initialStock < 0) {
             throw new IllegalArgumentException("Initial stock cannot be negative");
         }
@@ -51,7 +53,9 @@ public final class Medication {
         return stock;
     }
 
+    // Keep stock changes inside the domain package so callers cannot bypass Pharmacy's checks and audit.
     synchronized boolean dispenseStock(int quantity) {
+        // Refuse invalid quantities and shortages before subtracting anything.
         if (quantity <= 0 || quantity > stock) {
             return false;
         }
@@ -60,6 +64,7 @@ public final class Medication {
     }
 
     synchronized boolean restock(int quantity) {
+        // Refuse invalid quantities and integer overflow before adding to stock.
         if (quantity <= 0 || quantity > Integer.MAX_VALUE - stock) {
             return false;
         }
