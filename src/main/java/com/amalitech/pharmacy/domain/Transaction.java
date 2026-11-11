@@ -1,11 +1,10 @@
 // Immutable transaction record: preserves dispense/restock details for reporting and audit.
+// Invalid record data throws; expected business-operation rejections are returned as OperationResult.
 package com.amalitech.pharmacy.domain;
 
-import java.util.Map;
 import java.math.BigDecimal;
 import java.util.Objects;
 
-// Immutable audit entry; retain prescription details that the starter only printed.
 public record Transaction(
         int id,
         String customerName,
@@ -14,7 +13,7 @@ public record Transaction(
         BigDecimal total,
         TransactionType type,
         String prescriber,
-        Map<String, String> dispensingDetails) {
+        DispenseRequest.CategoryDetails categoryDetails) {
 
     public Transaction {
         if (id <= 0) {
@@ -30,8 +29,7 @@ public record Transaction(
             throw new IllegalArgumentException("Transaction total must be non-negative");
         }
         Objects.requireNonNull(type, "Transaction type is required");
-        Objects.requireNonNull(dispensingDetails, "Dispensing details are required");
-        dispensingDetails = Map.copyOf(dispensingDetails);
+        Objects.requireNonNull(categoryDetails, "Category details are required");
     }
 
     private static String requireText(String value, String label) {
