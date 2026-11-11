@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PharmacyTest {
 
+    // Protect the expected prices, patient discount, stock changes, and audit/history updates.
     @Test
     void preservesSuccessfulDispensingDiscountAndRestockBehavior() {
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
@@ -42,6 +43,7 @@ class PharmacyTest {
         assertEquals(List.of("Got 2 x Paracetamol 500mg"), walkIn.history());
     }
 
+    // A failed dispense must leave every part of the pharmacy state unchanged.
     @Test
     void rejectsOverDispensingWithoutChangingStockOrRecordingSuccess() {
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
@@ -60,6 +62,7 @@ class PharmacyTest {
         assertTrue(pharmacy.transactions().isEmpty());
     }
 
+    // Guard against invalid quantities and integer overflow corrupting inventory.
     @Test
     void rejectsInvalidQuantitiesAndStockOverflow() {
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
@@ -81,6 +84,7 @@ class PharmacyTest {
         assertTrue(pharmacy.transactions().isEmpty());
     }
 
+    // Prescription validation must happen before stock, history, or transaction data changes.
     @Test
     void rejectsPrescriptionDispensingWithoutPrescriber() {
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
@@ -97,6 +101,7 @@ class PharmacyTest {
         assertTrue(customer.history().isEmpty());
     }
 
+    // BigDecimal arithmetic should preserve very large exact totals without primitive overflow.
     @Test
     void preservesExactLargeTotalsWithoutOverflow() {
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
@@ -113,6 +118,7 @@ class PharmacyTest {
         assertEquals(new BigDecimal("2E+1000"), pharmacy.transactions().get(0).total());
     }
 
+    // New policies can add rules, and the resulting transaction retains immutable request details.
     @Test
     void allowsNewPoliciesAndKeepsPrescriberAndDetailsInImmutableAuditRecord() {
         DispensingPolicy controlledPolicy = new DispensingPolicy() {
@@ -155,6 +161,7 @@ class PharmacyTest {
                 () -> transaction.dispensingDetails().put("other", "value"));
     }
 
+    // Public collection accessors must not let callers mutate the pharmacy's internal lists.
     @Test
     void collectionAccessorsDoNotExposeMutableInternalState() {
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
@@ -168,6 +175,7 @@ class PharmacyTest {
                 () -> pharmacy.transactions().clear());
     }
 
+    // An optional prescriber should not appear in an OTC confirmation when it is not required.
     @Test
     void ignoresOptionalPrescriberInOverTheCounterConfirmation() {
         Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
