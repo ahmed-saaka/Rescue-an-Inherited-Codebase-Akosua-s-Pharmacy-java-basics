@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -94,11 +93,53 @@ class PharmacyTest {
         pharmacy.addMedication(medication);
         pharmacy.addCustomer(customer);
 
-        assertFalse(pharmacy.dispense(customer, medication, 1, null).successful());
+        OperationResult missingPrescriber = pharmacy.dispense(customer, medication, 1, null);
+        assertFalse(missingPrescriber.successful());
+        assertEquals(
+                "Cannot dispense Amoxicillin 250mg: A prescriber is required for prescription medicine.",
+                missingPrescriber.message());
         assertFalse(pharmacy.dispense(customer, medication, 1, " ").successful());
         assertEquals(10, medication.stock());
         assertTrue(pharmacy.transactions().isEmpty());
         assertTrue(customer.history().isEmpty());
+    }
+
+    @Test
+    void validatesRequestAndTransactionInvariantsAtConstruction() {
+        assertThrows(IllegalArgumentException.class, () -> new DispenseRequest(0, null));
+        assertThrows(IllegalArgumentException.class, () -> new DispenseRequest(-1, null));
+        assertThrows(IllegalArgumentException.class, () -> OperationResult.failure(""));
+        assertThrows(IllegalArgumentException.class, () -> OperationResult.failure("  "));
+
+        assertThrows(IllegalArgumentException.class, () -> new Transaction(
+                1, "Kofi Mensah", "Medicine", 0, BigDecimal.ONE,
+                TransactionType.DISPENSE, null, new DispenseRequest.NoCategoryDetails()));
+        assertThrows(IllegalArgumentException.class, () -> new Transaction(
+                1, "Kofi Mensah", "Medicine", 1, BigDecimal.ONE.negate(),
+                TransactionType.DISPENSE, null, new DispenseRequest.NoCategoryDetails()));
+        assertThrows(NullPointerException.class, () -> new Transaction(
+                1, "Kofi Mensah", "Medicine", 1, null,
+                TransactionType.DISPENSE, null, new DispenseRequest.NoCategoryDetails()));
+        assertThrows(IllegalArgumentException.class, () -> new Transaction(
+                1, "Kofi Mensah", null, 1, BigDecimal.ONE,
+                TransactionType.DISPENSE, null, new DispenseRequest.NoCategoryDetails()));
+        assertThrows(IllegalArgumentException.class, () -> new Transaction(
+                1, "Kofi Mensah", " ", 1, BigDecimal.ONE,
+                TransactionType.DISPENSE, null, new DispenseRequest.NoCategoryDetails()));
+    }
+
+    @Test
+    void trimsPrescriberBeforeValidationAndAuditRecording() {
+        Pharmacy pharmacy = new Pharmacy("Akosua's Pharmacy");
+        Medication medication = new Medication(
+                "Amoxicillin 250mg", new BigDecimal("30.00"), 2, new PrescriptionPolicy());
+        Customer customer = new Customer("Kofi Mensah", CustomerType.WALK_IN);
+        pharmacy.addMedication(medication);
+        pharmacy.addCustomer(customer);
+
+        assertTrue(pharmacy.dispense(customer, medication, 1, "  Dr. Boateng  ").successful());
+
+        assertEquals("Dr. Boateng", pharmacy.transactions().get(0).prescriber());
     }
 
     // BigDecimal arithmetic should preserve very large exact totals without primitive overflow.
@@ -118,9 +159,9 @@ class PharmacyTest {
         assertEquals(new BigDecimal("2E+1000"), pharmacy.transactions().get(0).total());
     }
 
-    // New policies can add rules, and the resulting transaction retains immutable request details.
+    // New policies can validate typed category details and retain them in the transaction.
     @Test
-    void allowsNewPoliciesAndKeepsPrescriberAndDetailsInImmutableAuditRecord() {
+    void allowsNewPoliciesAndKeepsPrescriberAndCategoryDetailsInAuditRecord() {
         DispensingPolicy controlledPolicy = new DispensingPolicy() {
             @Override
             public String category() {
@@ -128,17 +169,12 @@ class PharmacyTest {
             }
 
             @Override
-            public boolean prescriberRequired() {
-                return true;
-            }
-
-            @Override
             public Optional<String> validationError(DispenseRequest request) {
                 if (request.prescriber() == null || request.prescriber().isBlank()) {
-                    return Optional.of("without a prescriber");
+                    return Optional.of("A prescriber is required.");
                 }
-                if (!request.additionalDetails().containsKey("permit")) {
-                    return Optional.of("without a permit");
+                if (!(request.categoryDetails() instanceof DispenseRequest.ControlledSubstanceDetails)) {
+                    return Optional.of("A permit is required.");
                 }
                 return Optional.empty();
             }
@@ -152,13 +188,12 @@ class PharmacyTest {
         assertFalse(pharmacy.dispense(customer, medication,
                 new DispenseRequest(1, "Dr. Boateng")).successful());
         assertTrue(pharmacy.dispense(customer, medication,
-                new DispenseRequest(1, "Dr. Boateng", Map.of("permit", "P-42"))).successful());
+                new DispenseRequest(1, "Dr. Boateng",
+                        new DispenseRequest.ControlledSubstanceDetails("P-42"))).successful());
 
         var transaction = pharmacy.transactions().get(0);
         assertEquals("Dr. Boateng", transaction.prescriber());
-        assertEquals(Map.of("permit", "P-42"), transaction.dispensingDetails());
-        assertThrows(UnsupportedOperationException.class,
-                () -> transaction.dispensingDetails().put("other", "value"));
+        assertEquals(new DispenseRequest.ControlledSubstanceDetails("P-42"), transaction.categoryDetails());
     }
 
     // Public collection accessors must not let callers mutate the pharmacy's internal lists.
