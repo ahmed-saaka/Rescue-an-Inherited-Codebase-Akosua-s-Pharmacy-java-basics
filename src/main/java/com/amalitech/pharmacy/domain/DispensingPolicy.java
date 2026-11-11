@@ -7,11 +7,6 @@ public interface DispensingPolicy {
     // Use a policy-provided label for inventory reports and other category displays.
     String category();
 
-    // Empty means the request meets this medicine category's dispensing rules.
+    // Empty means valid; a present value is a complete user-facing rejection sentence.
     Optional<String> validationError(DispenseRequest request);
-
-    // Most categories do not require a prescriber; prescription-based policies opt in.
-    default boolean prescriberRequired() {
-        return false;
-    }
 }
