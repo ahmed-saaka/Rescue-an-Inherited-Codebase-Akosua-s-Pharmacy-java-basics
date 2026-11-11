@@ -50,6 +50,15 @@ public final class Pharmacy {
 
     public synchronized OperationResult dispense(
             Customer customer, Medication medication, int quantity, String prescriber) {
+        if (customer == null || !customers.contains(customer)) {
+            return OperationResult.failure("Cannot dispense to an unregistered pharmacy customer");
+        }
+        if (medication == null || !medications.contains(medication)) {
+            return OperationResult.failure("Cannot dispense medication not stocked by this pharmacy");
+        }
+        if (quantity <= 0) {
+            return OperationResult.failure("Cannot dispense a non-positive quantity");
+        }
         return dispense(customer, medication, new DispenseRequest(quantity, prescriber));
     }
 
@@ -57,21 +66,25 @@ public final class Pharmacy {
             Customer customer, Medication medication, DispenseRequest request) {
         // Refuse unknown objects so an operation cannot be attributed to another pharmacy.
         if (customer == null || !customers.contains(customer)) {
-            return new OperationResult(false, "Cannot dispense to an unregistered pharmacy customer");
+            return OperationResult.failure("Cannot dispense to an unregistered pharmacy customer");
         }
         if (medication == null || !medications.contains(medication)) {
-            return new OperationResult(false, "Cannot dispense medication not stocked by this pharmacy");
+            return OperationResult.failure("Cannot dispense medication not stocked by this pharmacy");
         }
         Objects.requireNonNull(request, "Dispense request is required");
         if (request.quantity() <= 0) {
-            return new OperationResult(false, "Cannot dispense a non-positive quantity");
+            return OperationResult.failure("Cannot dispense a non-positive quantity");
         }
 
         // The starter used string branches here; policies keep new medicine rules out of the shared workflow.
-        Optional<String> policyError = medication.dispensingPolicy().validationError(request);
+        DispensingPolicy dispensingPolicy = medication.dispensingPolicy();
+        boolean prescriberRequired = request.prescriber() != null
+                && dispensingPolicy.validationError(
+                        new DispenseRequest(request.quantity(), null, request.categoryDetails())).isPresent();
+        Optional<String> policyError = dispensingPolicy.validationError(request);
         if (policyError.isPresent()) {
-            return new OperationResult(false,
-                    "Cannot dispense " + medication.name() + " " + policyError.get());
+            return OperationResult.failure(
+                    "Cannot dispense " + medication.name() + ": " + policyError.get());
         }
 
         // The starter deducted stock before checking availability; reject before changing any recorded state.
@@ -81,7 +94,7 @@ public final class Pharmacy {
             total = total.multiply(REGISTERED_PATIENT_DISCOUNT);
         }
         if (!medication.dispenseStock(request.quantity())) {
-            return new OperationResult(false,
+            return OperationResult.failure(
                     "Cannot dispense " + medication.name() + ": insufficient stock");
         }
 
@@ -95,24 +108,24 @@ public final class Pharmacy {
                 total,
                 TransactionType.DISPENSE,
                 request.prescriber(),
-                request.additionalDetails()));
+                request.categoryDetails()));
 
         String message = "Dispensed " + request.quantity() + " x " + medication.name()
                 + " to " + customer.name();
-        if (medication.dispensingPolicy().prescriberRequired()) {
+        if (prescriberRequired) {
             message += " (prescribed by " + request.prescriber() + ")";
         }
         message += " for GHS " + formatAmount(total);
-        return new OperationResult(true, message);
+        return OperationResult.success(message);
     }
 
     public synchronized OperationResult restock(Medication medication, int quantity) {
         // Only this pharmacy's medication can be restocked through this operation.
         if (medication == null || !medications.contains(medication)) {
-            return new OperationResult(false, "Cannot restock medication not stocked by this pharmacy");
+            return OperationResult.failure("Cannot restock medication not stocked by this pharmacy");
         }
         if (!medication.restock(quantity)) {
-            return new OperationResult(false,
+            return OperationResult.failure(
                     "Cannot restock " + medication.name() + " with quantity " + quantity);
         }
         // Record the restock only after the stock update has succeeded.
@@ -124,8 +137,8 @@ public final class Pharmacy {
                 BigDecimal.ZERO,
                 TransactionType.RESTOCK,
                 null,
-                Map.of()));
-        return new OperationResult(true, "Restocked " + quantity + " x " + medication.name());
+                new DispenseRequest.NoCategoryDetails()));
+        return OperationResult.success("Restocked " + quantity + " x " + medication.name());
     }
 
     public synchronized List<Transaction> transactions() {
