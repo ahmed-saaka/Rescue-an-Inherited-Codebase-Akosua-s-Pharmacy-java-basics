@@ -26,7 +26,11 @@ operation succeeds, not merely reported after the count has become invalid.
 
 ## Initial design sketch
 
-![Akosua's Pharmacy design sketch](design-sketch.png)
+The original design below captures the baseline architecture before the domain
+refactor. It shows the core structure that later evolved into the final
+business-focused design described in the notes below.
+
+![Akosua's Pharmacy initial design sketch](design-sketch.png)
 
 The policy boundary is the extension point: each medicine category implements
 its own validation. A controlled policy can validate a prescriber and any
