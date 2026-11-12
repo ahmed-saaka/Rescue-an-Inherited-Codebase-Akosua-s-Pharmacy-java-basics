@@ -39,6 +39,11 @@ the pharmacy's stock/recording workflow.
 
 ## Design notes and changes from the initial sketch
 
+The final design is shown below and represents the implemented architecture that
+replaced the earlier single-component sketch:
+
+![Akosua's Pharmacy final design](final-design-sketch.png)
+
 The implementation uses application and domain packages rather than the
 single `PharmacyService` component drawn in the initial sketch:
 
